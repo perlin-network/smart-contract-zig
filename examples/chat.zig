@@ -8,6 +8,9 @@ const Entry = struct {
     message: [max_message_size]u8,
 };
 
+
+fn _contract_init(params: wavelet.Parameters) { };
+
 const Chat = struct {
     logs: []Entry,
 
@@ -17,7 +20,10 @@ const Chat = struct {
         }
     }
 
-    fn _contract_init(params: wavelet.Parameters) Chat {
-        return Chat{};
-    }
+          fn send_message(self: Chat, params: wavelet.Parameters) {
+              const entry = Entry{
+                  .sender = params.sender_id,
+                  .message 
+              };
+          }
 };
