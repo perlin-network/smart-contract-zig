@@ -25,7 +25,7 @@ pub fn abort(reason: []const u8) noreturn {
     unreachable;
 }
 
-pub const Tag = enum (u8) {
+pub const Tag = enum(u8) {
     Nop,
     Transfer,
     Stake,
@@ -91,7 +91,7 @@ pub const Stake = struct {
         var buf = std.heap.wasm_allocaator.alloc(u8, 1 + 8);
 
         buf[0] = self.opcode;
-        std.mem.writeIntSliceLittle(u64, buf[1..1+8], self.amount);
+        std.mem.writeIntSliceLittle(u64, buf[1 .. 1 + 8], self.amount);
 
         return buf;
     }
@@ -103,21 +103,34 @@ pub const Parameters = struct {
     pub transaction_id: [32]u8,
     pub sender_id: [32]u8,
     pub amount: u64,
+    pub parameters: []u8,
 
     pub fn init() Parameters {
         var buf = std.heap.wasm_allocator.alloc(u8, _payload_len()) catch unreachable;
-
         _payload(buf.ptr);
 
-        var round_index = std.mem.readIntSliceLittle(u64, buf[0..8]);
-        var round_id = @ptrCast(*const [32]u8, buf[8..8+32].ptr).*;
+        var round_index = std.mem.readIntSliceLittle(u64, read(buf, 8));
+        var round_id = @ptrCast(*const [32]u8, read(buf, 32).ptr).*;
 
-        var transaction_id = @ptrCast(*const [32]u8, buf[8+32..8+32+32].ptr).*;
-        var sender_id = @ptrCast(*const [32]u8, buf[8+32+32..8+32+32+32].ptr).*;
+        var transaction_id = @ptrCast(*const [32]u8, read(buf, 32).ptr).*;
+        var sender_id = @ptrCast(*const [32]u8, read(buf, 32).ptr).*;
 
-        var amount = std.mem.readIntSliceLittle(u64, buf[8+32+32+32..8+32+32+32+8]);
+        var amount = std.mem.readIntSliceLittle(u64, read(buf, 8));
 
-        return Parameters {.round_index = round_index, .round_id = round_id, .transaction_id = transaction_id, .sender_id = sender_id, .amount = amount};
+        return Parameters{
+            .round_index = round_index,
+            .round_id = round_id,
+            .transaction_id = transaction_id,
+            .sender_id = sender_id,
+            .amount = amount,
+            .parameters = buf,
+        };
     }
 };
 
+// read trims the buf and return the trimmed part
+fn read(buf: []u8, sz: u32) []u8 {
+    const piece: []u8 = buf[0..sz];
+    buf = buf[sz..];
+    return piece;
+}
