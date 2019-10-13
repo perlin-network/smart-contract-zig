@@ -60,25 +60,25 @@ pub const Transfer = struct {
             var buf = std.heap.wasm_allocator.alloc(u8, 32 + 8 + 8 + 8 + 8 + 4 + self.func_name.?.len + 4 + self.func_params.?.len) catch unreachable;
 
             buf[0..32] = self.recipient_id[0..32];
-            std.mem.writeIntSliceLittle(u64, buf[32..32+8], self.amount);
+            std.mem.writeIntSliceLittle(u64, buf[32 .. 32 + 8], self.amount);
 
-            std.mem.writeIntSliceLittle(u64, buf[32+8..32+8+8], self.gas_limit.?);
-            std.mem.writeIntSliceLittle(u64, buf[32+8+8..32+8+8+8], self.gas_deposit.?);
+            std.mem.writeIntSliceLittle(u64, buf[32 + 8 .. 32 + 8 + 8], self.gas_limit.?);
+            std.mem.writeIntSliceLittle(u64, buf[32 + 8 + 8 .. 32 + 8 + 8 + 8], self.gas_deposit.?);
 
-            std.mem.writeIntSliceLittle(u32, buf[32+8+8+8..32+8+8+8+4], self.func_name.?.len);
-            buf[32+8+8+8+4..32+8+8+8+4 + self.func_name.?.len] = self.func_name.?[0..];
+            std.mem.writeIntSliceLittle(u32, buf[32 + 8 + 8 + 8 .. 32 + 8 + 8 + 8 + 4], self.func_name.?.len);
+            buf[32 + 8 + 8 + 8 + 4 .. 32 + 8 + 8 + 8 + 4 + self.func_name.?.len] = self.func_name.?[0..];
 
-            std.mem.writeIntSliceLittle(u32, buf[32+8+8+8+4 + self.func_name.?.len..32+8+8+8+4 + self.func_name.?.len + 4], self.func_params.?.len);
-            buf[32+8+8+8+4 + self.func_name.?.len + 4..32+8+8+8+4 + self.func_name.?.len + 4 + self.func_params.?.len] = self.func_params.?[0..];
+            std.mem.writeIntSliceLittle(u32, buf[32 + 8 + 8 + 8 + 4 + self.func_name.?.len .. 32 + 8 + 8 + 8 + 4 + self.func_name.?.len + 4], self.func_params.?.len);
+            buf[32 + 8 + 8 + 8 + 4 + self.func_name.?.len + 4 .. 32 + 8 + 8 + 8 + 4 + self.func_name.?.len + 4 + self.func_params.?.len] = self.func_params.?[0..];
 
             return buf;
         } else {
             var buf = std.heap.wasm_allocator.alloc(u8, 32 + 8) catch unreachable;
 
             buf[0..32] = self.recipient_id[0..32];
-            std.mem.writeIntSliceLittle(u64, buf[32..32+8], self.amount);
+            std.mem.writeIntSliceLittle(u64, buf[32 .. 32 + 8], self.amount);
 
-            return buf[0..32+8];
+            return buf[0 .. 32 + 8];
         }
     }
 };
@@ -106,16 +106,18 @@ pub const Parameters = struct {
     pub parameters: []u8,
 
     pub fn init() Parameters {
-        var buf = std.heap.wasm_allocator.alloc(u8, _payload_len()) catch unreachable;
+        var buf: []const u8 = std.heap.wasm_allocator.alloc(u8, _payload_len()) catch unreachable;
         _payload(buf.ptr);
 
-        var round_index = std.mem.readIntSliceLittle(u64, read(buf, 8));
-        var round_id = @ptrCast(*const [32]u8, read(buf, 32).ptr).*;
+        comptime var c: u32 = 0; // cursor
 
-        var transaction_id = @ptrCast(*const [32]u8, read(buf, 32).ptr).*;
-        var sender_id = @ptrCast(*const [32]u8, read(buf, 32).ptr).*;
+        var round_index = std.mem.readIntSliceLittle(u64, read(c, buf, 8));
+        var round_id = @ptrCast(*const [32]u8, read(c, buf, 32).ptr).*;
 
-        var amount = std.mem.readIntSliceLittle(u64, read(buf, 8));
+        var transaction_id = @ptrCast(*const [32]u8, read(c, buf, 32).ptr).*;
+        var sender_id = read(c, buf, 32).*;
+
+        var amount = std.mem.readIntSliceLittle(u64, read(c, buf, 8));
 
         return Parameters{
             .round_index = round_index,
@@ -123,14 +125,25 @@ pub const Parameters = struct {
             .transaction_id = transaction_id,
             .sender_id = sender_id,
             .amount = amount,
-            .parameters = buf,
+            .parameters = buf[c..],
         };
     }
 };
 
 // read trims the buf and return the trimmed part
-fn read(buf: []u8, sz: u32) []u8 {
-    const piece: []u8 = buf[0..sz];
-    buf = buf[sz..];
-    return piece;
+inline fn read(cursor: comptime *u32, buf: []u8, sz: u32) []u8 {
+    const c = cursor.*;
+    cursor.* += sz;
+    return buf[c .. c + sz];
+}
+
+test "reader" {
+    const msg: []u8 = &"Hello, 世界";
+    comptime var c: *u32 = &0;
+
+    const hello = read(c, msg, 5);
+    const comma = read(c, msg, 1);
+
+    std.debug.assert(std.mem.eql(u8, hello, "Hello"));
+    std.debug.assert(std.mem.eql(u8, comma, ","));
 }
