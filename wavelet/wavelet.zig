@@ -15,8 +15,10 @@ extern "env" fn _hash_blake2b_512(data_ptr: [*]const u8, data_len: usize, out_pt
 extern "env" fn _hash_sha256(data_ptr: [*]const u8, data_len: usize, out_ptr: [*]const u8, out_len: usize) usize;
 extern "env" fn _hash_sha512(data_ptr: [*]const u8, data_len: usize, out_ptr: [*]const u8, out_len: usize) usize;
 
+const heap = std.heap.wasm_allocator;
+
 pub fn log(comptime fmt: []const u8, args: ...) void {
-    var msg = std.fmt.allocPrint(std.heap.wasm_allocator, fmt, args) catch unreachable;
+    var msg = std.fmt.allocPrint(heap, fmt, args) catch unreachable;
     _log(msg.ptr, msg.len);
 }
 
@@ -39,9 +41,9 @@ pub fn sendTransaction(tx: var) void {
     switch (T) {
         Transfer, Stake => {
             var payload = tx.marshal();
-            defer std.heap.wasm_allocator.free(payload);
+            defer heap.free(payload);
 
-            _send_transaction(@enumToInt(@field(Tag, @typeName(T))), payload.ptr, payload.len);
+            _send_transaction(Tag, payload.ptr, payload.len);
         },
         else => @compileError("Unknown transaction type provided to sendTransaction(): " ++ @typeName(T)),
     }
@@ -57,7 +59,7 @@ pub const Transfer = struct {
 
     pub fn marshal(self: Transfer) []u8 {
         if (self.gas_limit != null and self.gas_deposit != null and self.func_name != null and self.func_params != null) {
-            var buf = std.heap.wasm_allocator.alloc(u8, 32 + 8 + 8 + 8 + 8 + 4 + self.func_name.?.len + 4 + self.func_params.?.len) catch unreachable;
+            var buf = heapAlloc(u8, 32 + 8 + 8 + 8 + 8 + 4 + self.func_name.?.len + 4 + self.func_params.?.len) catch unreachable;
 
             buf[0..32] = self.recipient_id[0..32];
             std.mem.writeIntSliceLittle(u64, buf[32 .. 32 + 8], self.amount);
@@ -73,7 +75,7 @@ pub const Transfer = struct {
 
             return buf;
         } else {
-            var buf = std.heap.wasm_allocator.alloc(u8, 32 + 8) catch unreachable;
+            var buf = heapAlloc(u8, 32 + 8) catch unreachable;
 
             buf[0..32] = self.recipient_id[0..32];
             std.mem.writeIntSliceLittle(u64, buf[32 .. 32 + 8], self.amount);
@@ -82,6 +84,11 @@ pub const Transfer = struct {
         }
     }
 };
+
+test "marshal transfer" {
+    const t = Transfer{};
+    std.debug.assert((Transfer{}).marshal().len == 32 + 8 + 8 + 8 + 4);
+}
 
 pub const Stake = struct {
     pub opcode: u8,
@@ -106,16 +113,15 @@ pub const Parameters = struct {
     pub parameters: []u8,
 
     pub fn init() Parameters {
-        var buf: []const u8 = std.heap.wasm_allocator.alloc(u8, _payload_len()) catch unreachable;
+        var buf: []const u8 = heapAlloc(u8, _payload_len()) catch unreachable;
         _payload(buf.ptr);
 
         comptime var c: u32 = 0; // cursor
 
         var round_index = std.mem.readIntSliceLittle(u64, read(c, buf, 8));
-        var round_id = @ptrCast(*const [32]u8, read(c, buf, 32).ptr).*;
-
-        var transaction_id = @ptrCast(*const [32]u8, read(c, buf, 32).ptr).*;
-        var sender_id = read(c, buf, 32).*;
+        var round_id = read(c, buf, 32);
+        var transaction_id = read(c, buf, 32);
+        var sender_id = read(c, buf, 32);
 
         var amount = std.mem.readIntSliceLittle(u64, read(c, buf, 8));
 
@@ -130,8 +136,12 @@ pub const Parameters = struct {
     }
 };
 
+fn cast(t: type, buf: []u8) type {
+    return @ptrCast(*t, buf.ptr).*;
+}
+
 // read trims the buf and return the trimmed part
-inline fn read(cursor: comptime *u32, buf: []u8, sz: u32) []u8 {
+inline fn read(cursor: *u32, buf: []u8, sz: u32) []u8 {
     const c = cursor.*;
     cursor.* += sz;
     return buf[c .. c + sz];
@@ -139,7 +149,7 @@ inline fn read(cursor: comptime *u32, buf: []u8, sz: u32) []u8 {
 
 test "reader" {
     const msg: []u8 = &"Hello, 世界";
-    comptime var c: *u32 = &0;
+    var c: *u32 = &0;
 
     const hello = read(c, msg, 5);
     const comma = read(c, msg, 1);
