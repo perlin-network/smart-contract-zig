@@ -1,4 +1,5 @@
 const std = @import("std");
+const hex = @import("hex.zig");
 
 extern "env" fn _send_transaction(tag: u8, payload_ptr: [*]const u8, payload_len: usize) void;
 
@@ -59,23 +60,27 @@ pub const Transfer = struct {
 
     pub fn marshal(self: Transfer) []u8 {
         if (self.gas_limit != null and self.gas_deposit != null and self.func_name != null and self.func_params != null) {
-            var buf = heapAlloc(u8, 32 + 8 + 8 + 8 + 8 + 4 + self.func_name.?.len + 4 + self.func_params.?.len) catch unreachable;
+            var buf = heap.alloc(u8, 32 + 8 + 8 + 8 + 8 + 4 + self.func_name.?.len + 4 + self.func_params.?.len) catch unreachable;
+            var c: u64 = 32;
 
             buf[0..32] = self.recipient_id[0..32];
-            std.mem.writeIntSliceLittle(u64, buf[32 .. 32 + 8], self.amount);
+            std.mem.writeIntSliceLittle(u64, read(&c, buf, 8), self.amount);
 
-            std.mem.writeIntSliceLittle(u64, buf[32 + 8 .. 32 + 8 + 8], self.gas_limit.?);
-            std.mem.writeIntSliceLittle(u64, buf[32 + 8 + 8 .. 32 + 8 + 8 + 8], self.gas_deposit.?);
+            std.mem.writeIntSliceLittle(u64, read(&c, buf, 8), self.gas_limit.?);
+            std.mem.writeIntSliceLittle(u64, read(&c, buf, 8), self.gas_deposit.?);
 
-            std.mem.writeIntSliceLittle(u32, buf[32 + 8 + 8 + 8 .. 32 + 8 + 8 + 8 + 4], self.func_name.?.len);
-            buf[32 + 8 + 8 + 8 + 4 .. 32 + 8 + 8 + 8 + 4 + self.func_name.?.len] = self.func_name.?[0..];
+            // Write the function length and name
+            std.mem.writeIntSliceLittle(u32, read(&c, buf, 4), @intCast(u32, self.func_name.?.len));
+            buf[c .. c + self.func_name.?.len] = self.func_name.?[0..];
+            c += self.func_name.?.len;
 
-            std.mem.writeIntSliceLittle(u32, buf[32 + 8 + 8 + 8 + 4 + self.func_name.?.len .. 32 + 8 + 8 + 8 + 4 + self.func_name.?.len + 4], self.func_params.?.len);
-            buf[32 + 8 + 8 + 8 + 4 + self.func_name.?.len + 4 .. 32 + 8 + 8 + 8 + 4 + self.func_name.?.len + 4 + self.func_params.?.len] = self.func_params.?[0..];
+            std.mem.writeIntSliceLittle(u32, read(&c, buf, 4), @intCast(u32, self.func_params.?.len));
+            buf[c .. c + self.func_params.?.len] = self.func_params.?[0..];
+            c += self.func_params.?.len;
 
             return buf;
         } else {
-            var buf = heapAlloc(u8, 32 + 8) catch unreachable;
+            var buf = heap.alloc(u8, 32 + 8) catch unreachable;
 
             buf[0..32] = self.recipient_id[0..32];
             std.mem.writeIntSliceLittle(u64, buf[32 .. 32 + 8], self.amount);
@@ -86,8 +91,17 @@ pub const Transfer = struct {
 };
 
 test "marshal transfer" {
-    const t = Transfer{};
-    std.debug.assert((Transfer{}).marshal().len == 32 + 8 + 8 + 8 + 4);
+    var recipient_id: [32]u8 = undefined;
+    var random_id = "3b0c8f6c334b5a10e1e214217019593a22251c9efaefa4868fe661b6cef3d42e";
+
+    _ = try hex.decode(recipient_id[0..recipient_id.len], random_id[0..random_id.len]);
+
+    const t = Transfer{
+        .recipient_id = recipient_id,
+        .amount = 0,
+    };
+
+    std.debug.assert(t.marshal().len == 32 + 8);
 }
 
 pub const Stake = struct {
@@ -113,10 +127,10 @@ pub const Parameters = struct {
     pub parameters: []u8,
 
     pub fn init() Parameters {
-        var buf: []const u8 = heapAlloc(u8, _payload_len()) catch unreachable;
+        var buf: []const u8 = heap.alloc(u8, _payload_len()) catch unreachable;
         _payload(buf.ptr);
 
-        comptime var c: u32 = 0; // cursor
+        comptime var c: u64 = 0; // cursor
 
         var round_index = std.mem.readIntSliceLittle(u64, read(c, buf, 8));
         var round_id = read(c, buf, 32);
@@ -136,24 +150,42 @@ pub const Parameters = struct {
     }
 };
 
-fn cast(t: type, buf: []u8) type {
-    return @ptrCast(*t, buf.ptr).*;
-}
-
 // read trims the buf and return the trimmed part
-inline fn read(cursor: *u32, buf: []u8, sz: u32) []u8 {
+inline fn read(cursor: *u64, buf: []u8, sz: u32) []u8 {
     const c = cursor.*;
     cursor.* += sz;
     return buf[c .. c + sz];
 }
 
 test "reader" {
-    const msg: []u8 = &"Hello, 世界";
-    var c: *u32 = &0;
+    var msg: []u8 = &"Hello, 世界";
+    var c: u64 = 0;
 
-    const hello = read(c, msg, 5);
-    const comma = read(c, msg, 1);
+    const hello = read(&c, msg, 5);
+    const comma = read(&c, msg, 1);
 
     std.debug.assert(std.mem.eql(u8, hello, "Hello"));
     std.debug.assert(std.mem.eql(u8, comma, ","));
+}
+
+inline fn write(cursor: *u64, dst: []u8, src: []u8) void {
+    const c = cursor.*;
+    cursor.* += src.len;
+
+    for (src) |b, i| {
+        dst[c + i] = b;
+    }
+}
+
+test "writer" {
+    var msg: [12]u8 = undefined;
+    var c: u64 = 0;
+
+    var str1 = "hime ";
+    var str2 = "arikawa";
+
+    write(&c, &msg, &str1);
+    write(&c, &msg, &str2);
+
+    std.debug.assert(std.mem.eql(u8, msg, "hime arikawa"));
 }
