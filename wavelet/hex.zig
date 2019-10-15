@@ -1,4 +1,5 @@
 const std = @import("std");
+const assert = @import("test.zig").assert;
 const hextable = "0123456789abcdef";
 
 pub fn encodedLen(n: u64) u64 {
@@ -22,7 +23,7 @@ test "encode hex" {
 
     encode(dest[0..dest.len], string[0..string.len]);
 
-    std.debug.assert(std.mem.eql(u8, dest, "7368696f7461206e6167697361"));
+    assert(std.mem.eql(u8, dest, "7368696f7461206e6167697361"));
 }
 
 pub fn decodedLen(n: u64) u64 {
@@ -63,5 +64,5 @@ test "decode hex" {
 
     _ = try decode(dest[0..dest.len], string[0..string.len]);
 
-    std.debug.assert(std.mem.eql(u8, dest, "shiota nagisa"));
+    assert(std.mem.eql(u8, dest, "shiota nagisa"));
 }

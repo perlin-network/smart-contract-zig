@@ -1,5 +1,6 @@
 const std = @import("std");
 const hex = @import("hex.zig");
+const assert = @import("test.zig").assert;
 
 extern "env" fn _send_transaction(tag: u8, payload_ptr: [*]const u8, payload_len: usize) void;
 
@@ -101,7 +102,7 @@ test "marshal transfer" {
         .amount = 0,
     };
 
-    std.debug.assert(t.marshal().len == 32 + 8);
+    assert(t.marshal().len == 32 + 8);
 }
 
 pub const Stake = struct {
@@ -164,8 +165,8 @@ test "reader" {
     const hello = read(&c, msg, 5);
     const comma = read(&c, msg, 1);
 
-    std.debug.assert(std.mem.eql(u8, hello, "Hello"));
-    std.debug.assert(std.mem.eql(u8, comma, ","));
+    assert(std.mem.eql(u8, hello, "Hello"));
+    assert(std.mem.eql(u8, comma, ","));
 }
 
 inline fn write(cursor: *u64, dst: []u8, src: []u8) void {
@@ -187,5 +188,5 @@ test "writer" {
     write(&c, &msg, &str1);
     write(&c, &msg, &str2);
 
-    std.debug.assert(std.mem.eql(u8, msg, "hime arikawa"));
+    assert(std.mem.eql(u8, msg, "hime arikawa"));
 }

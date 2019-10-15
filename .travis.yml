@@ -1,0 +1,6 @@
+language: go
+go:
+  - 1.13.1
+install: true
+script:
+  - "for f in wavelet/*.zig; do zig test -target wasm32-freestanding $f; done"
